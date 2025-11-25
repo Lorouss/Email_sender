@@ -1,0 +1,6 @@
+1/ you need to install python
+2/ can you just click or run cmd python sender.py
+
+################################
+Website for design templates : https://beefree.io/
+#################################

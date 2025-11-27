@@ -84,10 +84,10 @@ class BulkEmailSender:
         style.configure("Main.TFrame", background="#1e1e2e")
         style.configure("TNotebook", background="#1e1e2e", borderwidth=0)
         style.configure("TNotebook.Tab",
-                        background="#2d2d44",
-                        foreground="#cdd6f4",
-                        padding=[20, 10],
-                        font=("Segoe UI", 10, "bold"))
+                         background="#2d2d44",
+                         foreground="#cdd6f4",
+                         padding=[20, 10],
+                         font=("Segoe UI", 10, "bold"))
         style.map("TNotebook.Tab",
                   background=[("selected", "#45475a")],
                   foreground=[("selected", "#89dceb")])
@@ -95,30 +95,30 @@ class BulkEmailSender:
         style.configure("Card.TFrame", background="#2d2d44", relief="flat")
 
         style.configure("TLabel",
-                        background="#2d2d44",
-                        foreground="#cdd6f4",
-                        font=("Segoe UI", 10))
+                         background="#2d2d44",
+                         foreground="#cdd6f4",
+                         font=("Segoe UI", 10))
         style.configure("Header.TLabel",
-                        background="#2d2d44",
-                        foreground="#89dceb",
-                        font=("Segoe UI", 14, "bold"))
+                         background="#2d2d44",
+                         foreground="#89dceb",
+                         font=("Segoe UI", 14, "bold"))
 
         style.configure("Accent.TButton",
-                        background="#89b4fa",
-                        foreground="#1e1e2e",
-                        font=("Segoe UI", 10, "bold"),
-                        borderwidth=0,
-                        focuscolor="none",
-                        padding=[20, 10])
+                         background="#89b4fa",
+                         foreground="#1e1e2e",
+                         font=("Segoe UI", 10, "bold"),
+                         borderwidth=0,
+                         focuscolor="none",
+                         padding=[20, 10])
         style.map("Accent.TButton",
                   background=[("active", "#74c7ec")])
 
         style.configure("Success.TButton",
-                        background="#a6e3a1",
-                        foreground="#1e1e2e",
-                        font=("Segoe UI", 10, "bold"),
-                        borderwidth=0,
-                        padding=[20, 10])
+                         background="#a6e3a1",
+                         foreground="#1e1e2e",
+                         font=("Segoe UI", 10, "bold"),
+                         borderwidth=0,
+                         padding=[20, 10])
 
     def create_smtp_tab(self):
         smtp_frame = ttk.Frame(self.notebook, style="Main.TFrame")
@@ -143,18 +143,23 @@ class BulkEmailSender:
         self.smtp_email.grid(row=3, column=1, sticky="ew", pady=10, padx=(10, 0))
         self.smtp_email.insert(0, self.smtp_config.get("email", ""))
 
-        ttk.Label(card, text="Password/App Password:").grid(row=4, column=0, sticky="w", pady=10)
+        ttk.Label(card, text="Reply-To Email:").grid(row=4, column=0, sticky="w", pady=10)
+        self.reply_to_email = ttk.Entry(card, width=40, font=("Segoe UI", 10))
+        self.reply_to_email.grid(row=4, column=1, sticky="ew", pady=10, padx=(10, 0))
+        self.reply_to_email.insert(0, self.smtp_config.get("reply_to", ""))
+
+        ttk.Label(card, text="Password/App Password:").grid(row=5, column=0, sticky="w", pady=10)
         self.smtp_password = ttk.Entry(card, width=40, show="*", font=("Segoe UI", 10))
-        self.smtp_password.grid(row=4, column=1, sticky="ew", pady=10, padx=(10, 0))
+        self.smtp_password.grid(row=5, column=1, sticky="ew", pady=10, padx=(10, 0))
         self.smtp_password.insert(0, self.smtp_config.get("password", ""))
 
-        ttk.Label(card, text="Delay Between Emails (sec):").grid(row=5, column=0, sticky="w", pady=10)
+        ttk.Label(card, text="Delay Between Batches (sec):").grid(row=6, column=0, sticky="w", pady=10)
         self.email_delay = ttk.Entry(card, width=40, font=("Segoe UI", 10))
-        self.email_delay.grid(row=5, column=1, sticky="ew", pady=10, padx=(10, 0))
-        self.email_delay.insert(0, self.smtp_config.get("delay", "2"))
+        self.email_delay.grid(row=6, column=1, sticky="ew", pady=10, padx=(10, 0))
+        self.email_delay.insert(0, self.smtp_config.get("delay", "10"))
 
         btn_frame = ttk.Frame(card, style="Card.TFrame")
-        btn_frame.grid(row=6, column=0, columnspan=2, pady=(30, 0))
+        btn_frame.grid(row=7, column=0, columnspan=2, pady=(30, 0))
 
         ttk.Button(btn_frame, text="💾 Save Configuration",
                    command=self.save_smtp_config,
@@ -168,7 +173,7 @@ class BulkEmailSender:
 
         info_text = "💡 Tip: Use App Passwords for Gmail/Outlook for better security and deliverability"
         info_label = ttk.Label(card, text=info_text, foreground="#f9e2af")
-        info_label.grid(row=7, column=0, columnspan=2, pady=(20, 0))
+        info_label.grid(row=8, column=0, columnspan=2, pady=(20, 0))
 
     def create_compose_tab(self):
         compose_frame = ttk.Frame(self.notebook, style="Main.TFrame")
@@ -380,6 +385,7 @@ class BulkEmailSender:
     def update_text_preview(self):
         try:
             html_content = self.html_editor.get("1.0", tk.END).strip()
+            # في المعاينة نستخدم "Preview User" لأن الإرسال أصبح مجمعاً
             html_content = html_content.replace("{{name}}", "Preview User")
 
             parser = self.HTMLTextExtractor()
@@ -454,9 +460,13 @@ class BulkEmailSender:
 
         return cleaned_html
 
+    def _chunk_list(self, recipients_list, chunk_size):
+        """Yield successive n-sized chunks from list."""
+        for i in range(0, len(recipients_list), chunk_size):
+            yield recipients_list[i:i + chunk_size]
 
     def send_bulk_email(self):
-        """Send bulk emails"""
+        """Send bulk emails using batching and BCC."""
         if not self.smtp_server.get() or not self.smtp_email.get() or not self.smtp_password.get():
             messagebox.showerror("Error", "❌ Please configure SMTP settings first!")
             return
@@ -465,83 +475,106 @@ class BulkEmailSender:
             messagebox.showerror("Error", "❌ Please enter email subject!")
             return
 
-        recipients = self.parse_recipients()
-        if not recipients:
+        recipients_data = self.parse_recipients()
+        recipient_emails = [r['email'] for r in recipients_data]
+
+        if not recipient_emails:
             messagebox.showerror("Error", "❌ No valid recipients found!")
             return
 
         if not messagebox.askyesno("Confirm",
-                                   f"Send email to {len(recipients)} recipients?"):
+                                   f"Send email to {len(recipient_emails)} recipients in batches?"):
             return
 
         self.send_button.config(state="disabled")
         self.status_text.delete("1.0", tk.END)
-        self.log_status(f"📧 Starting campaign for {len(recipients)} recipients...")
+        self.log_status(f"📧 Starting campaign for {len(recipient_emails)} recipients...")
 
         try:
             delay = float(self.email_delay.get())
+            if delay < 5:
+                delay = 5
         except:
-            delay = 2
+            delay = 10
+
+        BATCH_SIZE = 100
 
         original_html_content = self.html_editor.get("1.0", tk.END)
-        base_html_content = self._remove_beefree_watermark(original_html_content)
+        cleaned_html_content = self._remove_beefree_watermark(original_html_content)
 
-        success_count = 0
-        fail_count = 0
+        server = None
+        total_sent = 0
+        total_batches = 0
 
         try:
             server = smtplib.SMTP(self.smtp_server.get(), int(self.smtp_port.get()))
             server.starttls()
             server.login(self.smtp_email.get(), self.smtp_password.get())
 
-            for idx, recipient in enumerate(recipients):
-                try:
-                    # Create message
-                    msg = MIMEMultipart('alternative')
-                    msg['From'] = self.smtp_email.get()
-                    msg['To'] = recipient['email']
-                    msg['Subject'] = self.email_subject.get()
+            batches = list(self._chunk_list(recipient_emails, BATCH_SIZE))
+            total_batches = len(batches)
 
-                    html_content = base_html_content.replace("{{name}}",
-                                                         recipient['name'] or recipient['email'].split('@')[0])
+            # تحديد عنوان الرد (Reply-To)
+            reply_to = self.reply_to_email.get().strip()
+            if not reply_to:
+                # إذا تُرك فارغاً، استخدم بريد الإرسال (Your Email)
+                reply_to = self.smtp_email.get()
 
-                    html_part = MIMEText(html_content, 'html')
-                    msg.attach(html_part)
-                    server.send_message(msg)
+            # تحديد محتوى الرسالة النهائي (مع إزالة التخصيص)
+            final_html_content = cleaned_html_content.replace("{{name}}", "Valued Customer")
 
-                    success_count += 1
-                    self.log_status(f"✅ Sent to: {recipient['email']}")
 
-                    # Update progress
-                    progress = ((idx + 1) / len(recipients)) * 100
-                    self.progress_var.set(progress)
+            for batch_idx, batch in enumerate(batches):
+                self.log_status(f"Sending Batch {batch_idx + 1} of {total_batches} (Recipients: {len(batch)})...")
 
-                    # Random delay (anti-spam)
-                    if idx < len(recipients) - 1:
-                        sleep_time = delay + random.uniform(0, 1)
-                        time.sleep(sleep_time)
+                msg = MIMEMultipart('alternative')
+                msg['From'] = self.smtp_email.get()
+                # يتم وضع بريد المرسل في حقل To (أو يمكن تركه فارغاً) لضمان عدم ظهور BCCs للجميع.
+                msg['To'] = self.smtp_email.get()
+                msg['Subject'] = self.email_subject.get()
+                msg['Reply-To'] = reply_to # إضافة حقل الرد-إلى
 
-                except Exception as e:
-                    fail_count += 1
-                    self.log_status(f"❌ Failed to send to {recipient['email']}: {str(e)}")
+                html_part = MIMEText(final_html_content, 'html')
+                msg.attach(html_part)
+
+                # الإرسال الفعلي، حيث يتم تمرير 'batch' كقائمة مستلمين، وهي تعمل كـ BCC
+                server.sendmail(
+                    from_addr=self.smtp_email.get(),
+                    to_addrs=batch,
+                    msg=msg.as_string()
+                )
+
+                total_sent += len(batch)
+                self.log_status(f"✅ Batch {batch_idx + 1} sent successfully. ({total_sent} total emails)")
+
+                progress = ((batch_idx + 1) / total_batches) * 100
+                self.progress_var.set(progress)
+
+                if batch_idx < total_batches - 1:
+                    sleep_time = delay + random.uniform(0, 1)
+                    self.log_status(f"😴 Waiting for {sleep_time:.1f} seconds before next batch...")
+                    time.sleep(sleep_time)
 
             server.quit()
 
             self.log_status("\n" + "="*50)
             self.log_status(f"📊 Campaign completed!")
-            self.log_status(f"✅ Successful: {success_count}")
-            self.log_status(f"❌ Failed: {fail_count}")
-            self.log_status(f"📈 Success rate: {(success_count/len(recipients)*100):.1f}%")
+            self.log_status(f"✅ Successful: {total_sent}")
+            self.log_status(f"Total Sent: {total_sent} (in {total_batches} batches)")
 
             messagebox.showinfo("Complete",
-                                 f"Campaign finished!\n✅ Sent: {success_count}\n❌ Failed: {fail_count}")
+                                 f"Campaign finished!\n✅ Sent: {total_sent} recipients in {total_batches} batches.")
 
         except Exception as e:
-            self.log_status(f"❌ Fatal error: {str(e)}")
+            self.log_status(f"❌ Fatal error during campaign: {str(e)}")
             messagebox.showerror("Error", f"❌ Campaign failed: {str(e)}")
 
         finally:
-            # Re-enable send button
+            if server:
+                try:
+                    server.quit()
+                except:
+                    pass
             self.send_button.config(state="normal")
             self.progress_var.set(0)
 
@@ -560,6 +593,7 @@ class BulkEmailSender:
             "server": self.smtp_server.get(),
             "port": self.smtp_port.get(),
             "email": self.smtp_email.get(),
+            "reply_to": self.reply_to_email.get(),
             "password": self.smtp_password.get(),
             "delay": self.email_delay.get()
         }
